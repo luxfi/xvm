@@ -1214,6 +1214,63 @@ void test_asset_locate_empty_table_for_burn()
     PASS("asset_locate_empty_table_for_burn");
 }
 
+// Cover the UTXO arena-full apply path (lines in kernel_input_check_and_apply
+// where utxo_arena_insert returns 0xFFFFFFFFu and the tx is rejected with
+// kRejectArenaFull). We saturate state.utxos with kUtxoOccupied, then submit a
+// transfer producing one new output. Input is unrelated so it rejects on
+// missing-input first; we therefore burn an existing input then attempt to
+// emit a new utxo into a saturated arena.
+void test_tx_arena_full_rejects()
+{
+    auto desc = make_desc(60u);
+    auto state = ref::XVMReferenceState::empty();
+    uint8_t lux_id[32]; fill32(lux_id, 0);
+    uint8_t auth[32];   fill32(auth, 0xAA);
+    uint8_t alice[32];  fill32(alice, 0x11);
+    uint8_t bob[32];    fill32(bob, 0x22);
+    state.seed_asset(lux_id, 1'000'000ull, 0, auth, 9);
+
+    // Seed a single real input.
+    uint8_t in_id[32]; fill32(in_id, 0x80);
+    state.seed_utxo(in_id, lux_id, 100, 0, alice, 0, 1);
+
+    // Saturate the UTXO arena: every slot occupied. utxo_arena_insert will
+    // walk the entire arena and return 0xFFFFFFFFu.
+    for (auto& u : state.utxos) u.status |= xvm::gpu::kUtxoOccupied;
+
+    XvmTx tx{}; fill32(tx.tx_id, 0xCF);
+    tx.kind = static_cast<uint32_t>(XvmTxKind::Transfer);
+    tx.input_batch_offset = 0; tx.output_batch_offset = 0;
+    InputBatch ib{}; std::memcpy(ib.tx_id, tx.tx_id, 32);
+    ib.input_offset = 0; ib.input_count = 1; ib.witness_count = 1;
+    OutputBatch ob{}; std::memcpy(ob.tx_id, tx.tx_id, 32);
+    ob.output_offset = 0; ob.output_count = 1;
+
+    UTXO new_u{};
+    fill32(new_u.utxo_id, 0x90);
+    std::memcpy(new_u.asset_id, lux_id, 32);
+    new_u.amount_lo = 100;
+    std::memcpy(new_u.owner_root, bob, 32);
+    new_u.threshold = 1;
+
+    // Must point input at the seeded utxo so the input-check passes; then
+    // the arena-full guard fires on the output insert.
+    std::vector<uint8_t> inputs(32);
+    std::memcpy(inputs.data(), in_id, 32);
+
+    std::vector<XvmTx>        txs     = {tx};
+    std::vector<InputBatch>   ibs     = {ib};
+    std::vector<OutputBatch>  obs     = {ob};
+    std::vector<UTXO>         outputs = {new_u};
+
+    auto r = ref::run_reference(state, desc, txs, ibs, obs, inputs, outputs, {});
+    EXPECT("af.rej",      r.tx_rejected == 1u);
+    EXPECT("af.acc",      r.tx_accepted == 0u);
+    EXPECT("af.consumed", r.inputs_consumed == 1u);    // input was consumed
+    EXPECT("af.created",  r.outputs_created == 0u);    // arena full → no new utxo
+    PASS("tx_arena_full_rejects");
+}
+
 }  // namespace
 
 int main(int /*argc*/, char** /*argv*/)
@@ -1269,6 +1326,7 @@ int main(int /*argc*/, char** /*argv*/)
     test_mode_asset_transition_only();
     test_burn_greater_than_supply_rejects();
     test_asset_locate_empty_table_for_burn();
+    test_tx_arena_full_rejects();
 
     std::printf("[xvm_layout_test] passed=%d failed=%d\n", g_passed, g_failed);
     return g_failed == 0 ? 0 : 1;

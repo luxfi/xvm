@@ -133,11 +133,6 @@ bool memeq32(const uint8_t* a, const uint8_t* b) {
     return true;
 }
 
-bool is_zero32(const uint8_t* a) {
-    for (uint32_t i = 0; i < 32u; ++i) if (a[i] != 0) return false;
-    return true;
-}
-
 // =============================================================================
 // Membership: Bloom + cuckoo hash
 // =============================================================================
