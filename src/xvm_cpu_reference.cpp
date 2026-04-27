@@ -55,8 +55,11 @@ constexpr std::array<uint32_t, 25> kKeccakRot = {
     18,  2, 61, 56, 14,
 };
 
+// Mask the shift to [0,63]. `(x << 0) | (x >> 64)` is UB at clang -O2, and
+// kKeccakRot[0] is 0, so this fires every keccak round. Masking both sides
+// produces the correct identity rotation and is a no-op for non-zero n.
 inline uint64_t rotl64(uint64_t x, uint32_t n) {
-    return (x << n) | (x >> (64u - n));
+    return (x << (n & 63u)) | (x >> ((64u - n) & 63u));
 }
 
 __attribute__((optnone))

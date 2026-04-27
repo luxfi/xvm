@@ -18,10 +18,17 @@
 
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <random>
 #include <vector>
 
 using namespace xvm::gpu;
+
+#if defined(LUX_XVM_TEST_WGPU)
+namespace xvm::gpu {
+std::unique_ptr<XVMGPUEngine> create_xvm_gpu_engine_wgpu();
+}
+#endif
 
 namespace {
 
@@ -450,25 +457,40 @@ void test_two_engines_match(XVMGPUEngine* engine)
 
 }  // namespace
 
+void run_all_against(const char* label, XVMGPUEngine* engine)
+{
+    std::printf("[%s] %s\n", label,
+                engine ? engine->device_name() : "(CPU-only)");
+    test_brief_workload(engine);
+    test_empty_round(engine);
+    test_duplicate_input(engine);
+    test_mint_authority(engine);
+    test_export_marker(engine);
+    test_two_engines_match(engine);
+}
+
 int main(int /*argc*/, char** /*argv*/)
 {
     setvbuf(stdout, nullptr, _IOLBF, 0);
     std::printf("[xvm_determinism_test] starting\n");
 
+    // -- Default backend (Metal on Apple, CUDA on Linux+CUDA, else nullptr) --
     auto engine = XVMGPUEngine::create();
-    if (engine == nullptr) {
-        std::printf("  note: no GPU backend available — running CPU-only path\n");
-    } else {
-        std::printf("  device: %s\n", engine->device_name());
-    }
+    run_all_against("default", engine.get());
 
-    test_brief_workload(engine.get());
-    test_empty_round(engine.get());
-    test_duplicate_input(engine.get());
-    test_mint_authority(engine.get());
-    test_export_marker(engine.get());
+    // membership FPR is a CPU-only oracle test — run once
     test_membership_no_false_negatives();
-    test_two_engines_match(engine.get());
+
+#if defined(LUX_XVM_TEST_WGPU)
+    // -- WGSL/Dawn backend — runs the same workloads through the WebGPU
+    //    runtime and compares to the CPU oracle for byte equivalence. --
+    auto wgpu_engine = create_xvm_gpu_engine_wgpu();
+    if (wgpu_engine == nullptr) {
+        std::printf("[wgpu] runtime unavailable — driver compiled but no Dawn/wgpu-native at link\n");
+    } else {
+        run_all_against("wgpu", wgpu_engine.get());
+    }
+#endif
 
     std::printf("[xvm_determinism_test] passed=%d failed=%d\n",
                 g_passed, g_failed);

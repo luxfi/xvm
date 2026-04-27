@@ -226,8 +226,11 @@ constant uint kKeccakRot[25] = {
     18,  2, 61, 56, 14,
 };
 
+// Mask the shift to [0,63]. kKeccakRot[0] is 0; an unmasked rotate by 0 is
+// `(x << 0) | (x >> 64)` which is UB and miscompiles. Masking is a no-op for
+// non-zero n and yields x for n == 0.
 inline ulong rotl64(ulong x, uint n) {
-    return (x << n) | (x >> (64u - n));
+    return (x << (n & 63u)) | (x >> ((64u - n) & 63u));
 }
 
 inline void keccak_f1600(thread ulong* s) {

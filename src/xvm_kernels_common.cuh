@@ -197,8 +197,11 @@ __constant__ static const uint32_t kKeccakRot[25] = {
     18,  2, 61, 56, 14,
 };
 
+// Mask the shift to [0,63]. kKeccakRot[0] is 0; an unmasked rotate by 0 is
+// `(x << 0) | (x >> 64)` which is UB. Masking is a no-op for non-zero n and
+// yields x for n == 0.
 __device__ inline uint64_t rotl64(uint64_t x, uint32_t n) {
-    return (x << n) | (x >> (64u - n));
+    return (x << (n & 63u)) | (x >> ((64u - n) & 63u));
 }
 
 __device__ inline void keccak_f1600(uint64_t* s) {
