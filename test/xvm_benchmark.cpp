@@ -495,7 +495,64 @@ int main(int /*argc*/, char** /*argv*/) {
         build_workload(w, shape.seed_n, shape.tx_n);
         print_workload_header(shape);
 
-        // CPU baseline always runs.
+        // -------------------------------------------------------------------
+        // Determinism oracle — single canonical run at a fixed descriptor on
+        // every backend. Without this, the per-backend wall-clock loops
+        // (which iterate round_idx for cache freshness) produce a LAST root
+        // tied to a different `height` per backend, which falsely looks like
+        // kernel divergence. The timed loop below uses iterating round_idx
+        // for honest wall-clock numbers; this block alone is the determinism
+        // check, and is what gets reported as "execution_root" per backend.
+        // -------------------------------------------------------------------
+        constexpr uint64_t kCanonRound = 1u;  // matches xvm_determinism_test
+        uint8_t canon_cpu_root[32]{};
+        {
+            auto s = run_cpu_full(w, kCanonRound);
+            std::memcpy(canon_cpu_root, s.execution_root, 32);
+        }
+        std::printf("  canonical execution_root @ round=%llu : ",
+                    (unsigned long long)kCanonRound);
+        for (int i = 0; i < 32; ++i) std::printf("%02x", canon_cpu_root[i]);
+        std::printf("  (CPU oracle)\n");
+
+        bool det_ok = true;
+        if (shape.gpu_eligible && default_engine) {
+            auto s = run_gpu_full(default_engine.get(), w, kCanonRound);
+            if (!roots_equal(canon_cpu_root, s.execution_root)) {
+                det_ok = false;
+                std::printf("  DETERMINISM FAIL: %s @ round=%llu\n",
+                            default_engine->device_name(),
+                            (unsigned long long)kCanonRound);
+                print_root("CPU", canon_cpu_root);
+                print_root(default_engine->device_name(), s.execution_root);
+            }
+        }
+#if defined(LUX_XVM_TEST_WGPU)
+        if (shape.gpu_eligible && wgpu_engine) {
+            auto s = run_gpu_full(wgpu_engine.get(), w, kCanonRound);
+            if (!roots_equal(canon_cpu_root, s.execution_root)) {
+                det_ok = false;
+                std::printf("  DETERMINISM FAIL: %s (WGSL) @ round=%llu\n",
+                            wgpu_engine->device_name(),
+                            (unsigned long long)kCanonRound);
+                print_root("CPU",                          canon_cpu_root);
+                std::string lbl = std::string(wgpu_engine->device_name()) + " (WGSL)";
+                print_root(lbl.c_str(),                    s.execution_root);
+            }
+        }
+#endif
+        if (det_ok)
+            std::printf("  determinism: CPU == all GPU backends @ round=%llu (byte-equal)\n",
+                        (unsigned long long)kCanonRound);
+
+        // -------------------------------------------------------------------
+        // Wall-clock loops — each iteration uses a distinct round_idx so the
+        // workload's `height` field varies and per-tx tx_id does not collide
+        // across iterations. We measure mean/p50/p95/p99/min/max latency.
+        // The per-iteration root is NOT compared cross-backend (different
+        // round_idx per backend would falsely flag a mismatch); the canonical
+        // check above is the determinism oracle.
+        // -------------------------------------------------------------------
         BackendResult cpu = bench_backend("CPU", w, [&](uint64_t round) {
             return run_cpu_full(w, round);
         });
@@ -515,12 +572,6 @@ int main(int /*argc*/, char** /*argv*/) {
                 return run_gpu_full(default_engine.get(), w, round);
             }, shape.gpu_warmup, shape.gpu_measured);
             print_backend_row(gpu_default, &cpu);
-            if (!roots_equal(cpu.execution_root, gpu_default.execution_root)) {
-                std::printf("  WARN: %s execution_root mismatch vs CPU\n",
-                            gpu_default.label.c_str());
-                print_root("CPU", cpu.execution_root);
-                print_root(gpu_default.label.c_str(), gpu_default.execution_root);
-            }
         }
 
 #if defined(LUX_XVM_TEST_WGPU)
@@ -536,12 +587,6 @@ int main(int /*argc*/, char** /*argv*/) {
                 return run_gpu_full(wgpu_engine.get(), w, round);
             }, wgpu_warmup, wgpu_measured);
             print_backend_row(gpu_wgpu, &cpu);
-            if (!roots_equal(cpu.execution_root, gpu_wgpu.execution_root)) {
-                std::printf("  WARN: %s execution_root mismatch vs CPU\n",
-                            gpu_wgpu.label.c_str());
-                print_root("CPU",                  cpu.execution_root);
-                print_root(gpu_wgpu.label.c_str(), gpu_wgpu.execution_root);
-            }
         }
 #endif
 

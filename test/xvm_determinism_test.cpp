@@ -204,6 +204,11 @@ void build_workload(Workload& w, uint32_t seed_n, uint32_t tx_n)
 WorkloadResult run_cpu_workload(const Workload& w, const XVMRoundDescriptor& desc)
 {
     auto state = ref::XVMReferenceState::empty();
+    // Pre-size for xlarge (seed_n > kDefaultUtxoSlots=16384) so the seed
+    // inserts succeed; the GPU path is capped and won't hit this branch.
+    if (w.seed_count > state.utxos.size()) {
+        state.utxos.assign(w.seed_count * 2u, UTXO{});
+    }
     state.seed_asset(w.lux_id, /*supply=*/1ull << 50, 0, w.mint_auth, 9);
     for (uint32_t i = 0; i < w.seed_count; ++i) {
         state.seed_utxo(w.seed_utxo_ids[i].v, w.lux_id,
@@ -254,6 +259,59 @@ void test_brief_workload(XVMGPUEngine* engine)
     std::printf("  brief: roots match CPU<->GPU; accepted=%u rejected=%u consumed=%u created=%u\n",
                 gpu.tx_accepted, gpu.tx_rejected, gpu.inputs_consumed, gpu.outputs_created);
     PASS("brief workload (10K seed / 1K tx) — CPU<->GPU byte match");
+}
+
+// Workload-size sweep — proves determinism holds at every scale, not just the
+// pinned (10K, 1K) point. Each tier mirrors the xvm-benchmark workloads.
+// tx_n <= seed_n keeps every tx accept-eligible. The xlarge tier exceeds the
+// GPU per-round arena (kDefaultUtxoSlots=16384, kMaxTxs=4096) and is asserted
+// CPU-deterministic only; the smaller three tiers are 4-way (CPU/Metal/WGSL).
+struct SweepTier {
+    const char* name;
+    uint32_t    seed_n;
+    uint32_t    tx_n;
+    bool        gpu_eligible;
+};
+
+void test_size_sweep(XVMGPUEngine* engine)
+{
+    static const SweepTier kTiers[] = {
+        {"small",   1024u,   256u, true},
+        {"medium",  4096u,  1024u, true},
+        {"large",  12288u,  4096u, true},
+        {"xlarge", 32768u,  8192u, false},  // exceeds GPU caps; CPU-only
+    };
+    for (const auto& t : kTiers) {
+        Workload w; build_workload(w, t.seed_n, t.tx_n);
+        auto desc = make_desc(1u);
+        auto cpu = run_cpu_workload(w, desc);
+        if (engine == nullptr || !t.gpu_eligible) {
+            auto cpu2 = run_cpu_workload(w, desc);
+            EXPECT("sweep.cpu.det", cpu.equals(cpu2));
+            std::printf("  sweep[%s]: CPU determinism (seed=%u tx=%u)%s\n",
+                        t.name, t.seed_n, t.tx_n,
+                        t.gpu_eligible ? "" : " [CPU-only: exceeds GPU arena]");
+            continue;
+        }
+        auto gpu = run_gpu_workload(engine, w, desc);
+        if (!cpu.equals(gpu)) {
+            std::printf("  sweep[%s]: MISMATCH cpu_acc=%u gpu_acc=%u "
+                        "cpu_consumed=%u gpu_consumed=%u "
+                        "cpu_created=%u gpu_created=%u\n",
+                        t.name,
+                        cpu.tx_accepted, gpu.tx_accepted,
+                        cpu.inputs_consumed, gpu.inputs_consumed,
+                        cpu.outputs_created, gpu.outputs_created);
+            std::printf("    cpu.utxo_root      = "); for (auto b : cpu.utxo_root)      std::printf("%02x", b); std::printf("\n");
+            std::printf("    gpu.utxo_root      = "); for (auto b : gpu.utxo_root)      std::printf("%02x", b); std::printf("\n");
+            std::printf("    cpu.execution_root = "); for (auto b : cpu.execution_root) std::printf("%02x", b); std::printf("\n");
+            std::printf("    gpu.execution_root = "); for (auto b : gpu.execution_root) std::printf("%02x", b); std::printf("\n");
+        }
+        EXPECT("sweep.match", cpu.equals(gpu));
+        std::printf("  sweep[%s]: roots match (seed=%u tx=%u accepted=%u)\n",
+                    t.name, t.seed_n, t.tx_n, gpu.tx_accepted);
+    }
+    PASS("workload-size sweep (small/medium/large/xlarge) — determinism holds");
 }
 
 void test_empty_round(XVMGPUEngine* engine)
@@ -462,6 +520,7 @@ void run_all_against(const char* label, XVMGPUEngine* engine)
     std::printf("[%s] %s\n", label,
                 engine ? engine->device_name() : "(CPU-only)");
     test_brief_workload(engine);
+    test_size_sweep(engine);
     test_empty_round(engine);
     test_duplicate_input(engine);
     test_mint_authority(engine);

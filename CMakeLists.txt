@@ -250,6 +250,26 @@ if(LUX_XVM_BUILD_TESTS)
     endif()
     add_test(NAME xvm-determinism-test COMMAND xvm-determinism-test)
 
+    # Divergence probe — prints which root field diverges first per workload.
+    # Not run as part of ctest; built on demand to investigate determinism gaps.
+    add_executable(xvm-diverge-probe test/xvm_diverge_probe.cpp)
+    target_compile_features(xvm-diverge-probe PRIVATE cxx_std_20)
+    target_compile_options(xvm-diverge-probe PRIVATE -O3 -DNDEBUG)
+    if(LUX_XVM_ENABLE_METAL AND APPLE)
+        target_link_libraries(xvm-diverge-probe PRIVATE lux_xvm_metal)
+    elseif(LUX_XVM_ENABLE_CUDA)
+        target_link_libraries(xvm-diverge-probe PRIVATE lux_xvm_cuda)
+    else()
+        target_sources(xvm-diverge-probe PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/xvm_engine_stub.cpp)
+        target_link_libraries(xvm-diverge-probe PRIVATE lux_xvm_core)
+    endif()
+    if(LUX_XVM_ENABLE_WGPU)
+        target_link_libraries(xvm-diverge-probe PRIVATE lux_xvm_wgpu)
+        target_compile_definitions(xvm-diverge-probe PRIVATE
+            LUX_XVM_TEST_WGPU=1)
+    endif()
+
     # Benchmark — wall-clock + per-kernel breakdown across CPU/Metal/CUDA/WGSL.
     # Always built at Release-grade flags so the numbers reflect production.
     add_executable(xvm-benchmark test/xvm_benchmark.cpp)
