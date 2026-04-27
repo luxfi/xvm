@@ -1,0 +1,57 @@
+=== xvm-benchmark — XVM transition substrate wall-clock ===
+warmup=3  measured=10  build=Release -O3 -DNDEBUG
+backends:
+  CPU reference : enabled
+  default GPU   : Apple M1 Max
+  WGSL/WebGPU   : Apple M1 Max
+
+=== small : 1024 UTXOs / 256 txs ===
+  CPU                     mean=   26.233 ms  p50=   26.233 ms  p95=   26.233 ms  p99=   26.233 ms  min=   26.233 ms  max=   26.233 ms  |    9.88K/s UTXOs/s     9.88K/s txs/s  |   1.00x vs CPU  | accept=256 reject=0
+  Apple M1 Max (Metal)    mean=  521.447 ms  p50=  521.447 ms  p95=  521.447 ms  p99=  521.447 ms  min=  521.447 ms  max=  521.447 ms  |  492.91 /s UTXOs/s   492.91 /s txs/s  |   0.05x vs CPU  | accept=256 reject=0
+  Apple M1 Max (WGSL)     mean=   13.804  s  p50=   13.804  s  p95=   13.804  s  p99=   13.804  s  min=   13.804  s  max=   13.804  s  |   24.68 /s UTXOs/s    24.68 /s txs/s  |   0.00x vs CPU  | accept=256 reject=0
+  WARN: Apple M1 Max (WGSL) execution_root mismatch vs CPU
+    CPU.execution_root = bbac9bc4c07a7883a22246d76e83e5dd5ddbdaae2b6e08028c26a1d4dcafccef
+    Apple M1 Max (WGSL).execution_root = f01d3234838b2a6370371d9b7a358552c32fb7f40d2f12bf98ecd3b7577a83ab
+  per-kernel (CPU, avg of 10):
+    UTXOInputCheck+TransitionApply :     9.416 ms
+    XAssetTransition (empty pass)  :     2.073 ms
+    XRootUpdate                    :     8.198 ms
+
+=== medium : 4096 UTXOs / 1024 txs ===
+  CPU                     mean=  113.369 ms  p50=  113.369 ms  p95=  113.369 ms  p99=  113.369 ms  min=  113.369 ms  max=  113.369 ms  |    9.09K/s UTXOs/s     9.09K/s txs/s  |   1.00x vs CPU  | accept=1024 reject=0
+  Apple M1 Max (Metal)    mean=    7.008  s  p50=    7.008  s  p95=    7.008  s  p99=    7.008  s  min=    7.008  s  max=    7.008  s  |  268.60 /s UTXOs/s   268.60 /s txs/s  |   0.03x vs CPU  | accept=1024 reject=0
+  WARN: Apple M1 Max (Metal) execution_root mismatch vs CPU
+    CPU.execution_root = c8eac2421d1b81108adfed0d1e331d3bd859e05792223c7706202b88ee9b959b
+    Apple M1 Max (Metal).execution_root = 8a1909100a53f59e012c750f14e280403a8072a720b0966960e71a475ce34c13
+  Apple M1 Max (WGSL)     mean=   38.389  s  p50=   38.389  s  p95=   38.389  s  p99=   38.389  s  min=   38.389  s  max=   38.389  s  |   39.02 /s UTXOs/s    39.02 /s txs/s  |   0.00x vs CPU  | accept=1024 reject=0
+  WARN: Apple M1 Max (WGSL) execution_root mismatch vs CPU
+    CPU.execution_root = c8eac2421d1b81108adfed0d1e331d3bd859e05792223c7706202b88ee9b959b
+    Apple M1 Max (WGSL).execution_root = cb837dbbe769ddbd3c8553ddd353908a8b31bb8c45eddc9114735f53a495effd
+  per-kernel (CPU, avg of 10):
+    UTXOInputCheck+TransitionApply :    39.810 ms
+    XAssetTransition (empty pass)  :     8.009 ms
+    XRootUpdate                    :    31.684 ms
+
+=== large : 12288 UTXOs / 4096 txs ===
+  CPU                     mean=  446.154 ms  p50=  446.154 ms  p95=  446.154 ms  p99=  446.154 ms  min=  446.154 ms  max=  446.154 ms  |    9.27K/s UTXOs/s     9.27K/s txs/s  |   1.00x vs CPU  | accept=4096 reject=0
+  Apple M1 Max (Metal)    mean=   31.195  s  p50=   31.195  s  p95=   31.195  s  p99=   31.195  s  min=   31.195  s  max=   31.195  s  |  139.28 /s UTXOs/s   139.28 /s txs/s  |   0.02x vs CPU  | accept=4096 reject=0
+  WARN: Apple M1 Max (Metal) execution_root mismatch vs CPU
+    CPU.execution_root = 914c9f11ad7b475e9337c990e3b3dee6d58e1b5ce542087b3a323696f26ef851
+    Apple M1 Max (Metal).execution_root = 11e30d0421bb6623cb766a1fbd7da4c3b2b8f61c70eaa935f36ed84ceaaa8f16
+  Apple M1 Max (WGSL)     mean=   84.657  s  p50=   84.657  s  p95=   84.657  s  p99=   84.657  s  min=   84.657  s  max=   84.657  s  |   49.89 /s UTXOs/s    49.89 /s txs/s  |   0.01x vs CPU  | accept=4096 reject=0
+  WARN: Apple M1 Max (WGSL) execution_root mismatch vs CPU
+    CPU.execution_root = 914c9f11ad7b475e9337c990e3b3dee6d58e1b5ce542087b3a323696f26ef851
+    Apple M1 Max (WGSL).execution_root = 11e30d0421bb6623cb766a1fbd7da4c3b2b8f61c70eaa935f36ed84ceaaa8f16
+  per-kernel (CPU, avg of 10):
+    UTXOInputCheck+TransitionApply :   188.905 ms
+    XAssetTransition (empty pass)  :    32.269 ms
+    XRootUpdate                    :    95.869 ms
+
+=== xlarge : 32768 UTXOs / 8192 txs ===
+  CPU                     mean=    1.485  s  p50=    1.485  s  p95=    1.485  s  p99=    1.485  s  min=    1.485  s  max=    1.485  s  |    5.65K/s UTXOs/s     5.65K/s txs/s  |   1.00x vs CPU  | accept=8191 reject=1
+  per-kernel (CPU, avg of 10):
+    UTXOInputCheck+TransitionApply :   520.880 ms
+    XAssetTransition (empty pass)  :    64.493 ms
+    XRootUpdate                    :   256.973 ms
+
+=== xvm-benchmark complete ===
