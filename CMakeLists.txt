@@ -22,6 +22,22 @@ option(LUX_XVM_ENABLE_METAL "Build Metal backend (Apple)" ${APPLE})
 option(LUX_XVM_ENABLE_CUDA  "Build CUDA backend"          OFF)
 option(LUX_XVM_ENABLE_WGPU  "Build WebGPU/WGSL backend"   OFF)
 
+# Kernel source dirs — canonical homes are one-per-backend
+# (luxcpp/metal/src/shaders/xvm, luxcpp/cuda/kernels/xvm,
+# luxcpp/webgpu/kernels/wgsl/xvm). Override via -D<VAR>=<dir>.
+if(NOT LUX_XVM_KERNEL_DIR_METAL)
+    set(LUX_XVM_KERNEL_DIR_METAL
+        "${CMAKE_CURRENT_SOURCE_DIR}/../metal/src/shaders/xvm")
+endif()
+if(NOT LUX_XVM_KERNEL_DIR_CUDA)
+    set(LUX_XVM_KERNEL_DIR_CUDA
+        "${CMAKE_CURRENT_SOURCE_DIR}/../cuda/kernels/xvm")
+endif()
+if(NOT LUX_XVM_KERNEL_DIR_WGSL)
+    set(LUX_XVM_KERNEL_DIR_WGSL
+        "${CMAKE_CURRENT_SOURCE_DIR}/../webgpu/kernels/wgsl/xvm")
+endif()
+
 # ---- core library (host code: layout + CPU reference) ---------------------
 
 add_library(lux_xvm_core STATIC
@@ -64,7 +80,7 @@ if(LUX_XVM_ENABLE_METAL AND APPLE)
         xvm_asset.metal
         xvm_roots.metal)
         configure_file(
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/${src}
+            ${LUX_XVM_KERNEL_DIR_METAL}/${src}
             ${CMAKE_CURRENT_BINARY_DIR}/src/${src}
             COPYONLY)
     endforeach()
@@ -72,13 +88,13 @@ if(LUX_XVM_ENABLE_METAL AND APPLE)
     set(XVM_METAL_COMBINED ${CMAKE_CURRENT_BINARY_DIR}/src/xvm_combined.metal)
     add_custom_command(
         OUTPUT ${XVM_METAL_COMBINED}
-        COMMAND bash -c "cat ${CMAKE_CURRENT_SOURCE_DIR}/src/xvm_kernels_common.h.metal > ${XVM_METAL_COMBINED} && for f in xvm_membership.metal xvm_utxo.metal xvm_asset.metal xvm_roots.metal; do grep -v 'xvm_kernels_common.h.metal' ${CMAKE_CURRENT_SOURCE_DIR}/src/$f >> ${XVM_METAL_COMBINED}; done"
+        COMMAND bash -c "cat ${LUX_XVM_KERNEL_DIR_METAL}/xvm_kernels_common.h.metal > ${XVM_METAL_COMBINED} && for f in xvm_membership.metal xvm_utxo.metal xvm_asset.metal xvm_roots.metal; do grep -v 'xvm_kernels_common.h.metal' ${LUX_XVM_KERNEL_DIR_METAL}/$f >> ${XVM_METAL_COMBINED}; done"
         DEPENDS
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/xvm_kernels_common.h.metal
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/xvm_membership.metal
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/xvm_utxo.metal
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/xvm_asset.metal
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/xvm_roots.metal
+            ${LUX_XVM_KERNEL_DIR_METAL}/xvm_kernels_common.h.metal
+            ${LUX_XVM_KERNEL_DIR_METAL}/xvm_membership.metal
+            ${LUX_XVM_KERNEL_DIR_METAL}/xvm_utxo.metal
+            ${LUX_XVM_KERNEL_DIR_METAL}/xvm_asset.metal
+            ${LUX_XVM_KERNEL_DIR_METAL}/xvm_roots.metal
         VERBATIM)
 
     set(XVM_METAL_AIR ${CMAKE_CURRENT_BINARY_DIR}/src/xvm_combined.air)
@@ -109,11 +125,11 @@ if(LUX_XVM_ENABLE_CUDA)
     enable_language(CUDA)
     add_library(lux_xvm_cuda STATIC
         src/xvm_gpu_engine_cuda.cpp
-        src/xvm_cuda_launchers.cu
-        src/xvm_membership.cu
-        src/xvm_utxo.cu
-        src/xvm_asset.cu
-        src/xvm_roots.cu
+        ${LUX_XVM_KERNEL_DIR_CUDA}/xvm_cuda_launchers.cu
+        ${LUX_XVM_KERNEL_DIR_CUDA}/xvm_membership.cu
+        ${LUX_XVM_KERNEL_DIR_CUDA}/xvm_utxo.cu
+        ${LUX_XVM_KERNEL_DIR_CUDA}/xvm_asset.cu
+        ${LUX_XVM_KERNEL_DIR_CUDA}/xvm_roots.cu
     )
     target_include_directories(lux_xvm_cuda PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -165,7 +181,7 @@ if(LUX_XVM_ENABLE_WGPU)
     foreach(i RANGE 0 ${_LAST})
         list(GET _XVM_WGSL_FILES ${i} _SRC)
         list(GET _XVM_WGSL_NAMES ${i} _NAME)
-        file(READ ${CMAKE_CURRENT_SOURCE_DIR}/src/${_SRC} _CONTENT)
+        file(READ ${LUX_XVM_KERNEL_DIR_WGSL}/${_SRC} _CONTENT)
         file(APPEND ${_XVM_WGSL_HEADER}
             "// ---- ${_SRC} ----\n"
             "static constexpr char kXVMWGSL_${_NAME}[] = R\"XVMWGSL(\n${_CONTENT}\n)XVMWGSL\";\n\n")
