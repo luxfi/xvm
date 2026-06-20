@@ -3,3 +3,5 @@ build-*/
 *.metallib
 *.air
 .DS_Store
+build.log
+cfg.log
